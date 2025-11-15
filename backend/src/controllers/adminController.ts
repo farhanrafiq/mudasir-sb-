@@ -1,13 +1,14 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { UserModel } from '../models/User';
-import { DealerModel } from '../models/Dealer';
-import { AuditLogModel } from '../models/AuditLog';
+import UserModel from '../models/User';
+import DealerModel from '../models/Dealer';
+import AuditLogModel from '../models/AuditLog';
 import { hashPassword, generateTempPassword } from '../utils/auth';
+
 
 export const getAllDealers = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const dealers = await DealerModel.findAll();
+    const dealers = await DealerModel.find().sort({ createdAt: -1 });
     res.json(dealers);
   } catch (error) {
     console.error('Get all dealers error:', error);
@@ -15,9 +16,10 @@ export const getAllDealers = async (_req: AuthRequest, res: Response): Promise<v
   }
 };
 
+
 export const getAuditLogs = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const logs = await AuditLogModel.findAll();
+    const logs = await AuditLogModel.find().sort({ timestamp: -1 }).limit(1000);
     res.json(logs);
   } catch (error) {
     console.error('Get audit logs error:', error);
@@ -38,21 +40,21 @@ export const createDealer = async (req: AuthRequest, res: Response): Promise<voi
     } = (req as any).body;
 
     // Check if company name already exists
-    const existingDealer = await DealerModel.findByCompanyName(company_name);
+    const existingDealer = await DealerModel.findOne({ company_name });
     if (existingDealer) {
       res.status(409).json({ message: 'A dealer with this company name already exists.' });
       return;
     }
 
     // Check if email already exists
-    const existingUserByEmail = await UserModel.findByEmail(primary_contact_email);
+    const existingUserByEmail = await UserModel.findOne({ email: primary_contact_email });
     if (existingUserByEmail) {
       res.status(409).json({ message: 'A user with this email already exists.' });
       return;
     }
 
     // Check if username already exists
-    const existingUserByUsername = await UserModel.findByUsername(username);
+    const existingUserByUsername = await UserModel.findOne({ username });
     if (existingUserByUsername) {
       res.status(409).json({ message: 'A user with this username already exists.' });
       return;
@@ -74,7 +76,7 @@ export const createDealer = async (req: AuthRequest, res: Response): Promise<voi
 
     // Create dealer
     const dealer = await DealerModel.create({
-      user_id: user.id,
+      user_id: user._id,
       company_name,
       primary_contact_name,
       primary_contact_phone,
@@ -85,7 +87,7 @@ export const createDealer = async (req: AuthRequest, res: Response): Promise<voi
     // Create audit log
     await AuditLogModel.create({
       who_user_id: req.user!.userId,
-      who_user_name: (await UserModel.findById(req.user!.userId))!.name,
+      who_user_name: (await UserModel.findById(req.user!.userId))?.name,
       action_type: 'create_dealer',
       details: `Created dealer: ${company_name}`,
     });
@@ -111,7 +113,7 @@ export const updateDealer = async (req: AuthRequest, res: Response): Promise<voi
 
     // Check if company name is being changed and if it's unique
     if (updates.company_name && updates.company_name !== dealer.company_name) {
-      const existingDealer = await DealerModel.findByCompanyName(updates.company_name);
+      const existingDealer = await DealerModel.findOne({ company_name: updates.company_name });
       if (existingDealer) {
         res.status(409).json({ message: 'A dealer with this company name already exists.' });
         return;
@@ -119,14 +121,15 @@ export const updateDealer = async (req: AuthRequest, res: Response): Promise<voi
     }
 
     // Update dealer
-    const updatedDealer = await DealerModel.update(dealerId, updates);
+    await DealerModel.updateOne({ _id: dealerId }, updates);
+    const updatedDealer = await DealerModel.findById(dealerId);
 
     // Create audit log
     await AuditLogModel.create({
       who_user_id: req.user!.userId,
-      who_user_name: (await UserModel.findById(req.user!.userId))!.name,
+      who_user_name: (await UserModel.findById(req.user!.userId))?.name,
       action_type: 'update_dealer',
-      details: `Updated dealer: ${updatedDealer.company_name}`,
+      details: `Updated dealer: ${updatedDealer?.company_name ?? 'unknown'}`,
     });
 
     res.json(updatedDealer);
@@ -150,13 +153,13 @@ export const deleteDealer = async (req: AuthRequest, res: Response): Promise<voi
     // Create audit log before deletion
     await AuditLogModel.create({
       who_user_id: req.user!.userId,
-      who_user_name: (await UserModel.findById(req.user!.userId))!.name,
+      who_user_name: (await UserModel.findById(req.user!.userId))?.name,
       action_type: 'delete_dealer',
       details: `Deleted dealer: ${dealer.company_name}`,
     });
 
     // Delete dealer (cascades to user via foreign key)
-    await DealerModel.delete(dealerId);
+    await DealerModel.deleteOne({ _id: dealerId });
 
     res.status(204).send();
   } catch (error) {
@@ -181,12 +184,12 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
     const passwordHash = await hashPassword(tempPass);
 
     // Update password
-    await UserModel.updatePassword(userId, passwordHash, true);
+    await UserModel.updateOne({ _id: userId }, { password_hash: passwordHash, temp_pass: true });
 
     // Create audit log
     await AuditLogModel.create({
       who_user_id: req.user!.userId,
-      who_user_name: (await UserModel.findById(req.user!.userId))!.name,
+      who_user_name: (await UserModel.findById(req.user!.userId))?.name,
       action_type: 'reset_password',
       details: `Reset password for user: ${user.name}`,
     });

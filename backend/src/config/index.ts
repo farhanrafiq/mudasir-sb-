@@ -13,6 +13,7 @@ export const config = {
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
   },
+  mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/union_registry_db',
   
   jwt: {
     secret: process.env.JWT_SECRET || 'default_secret_change_in_production',

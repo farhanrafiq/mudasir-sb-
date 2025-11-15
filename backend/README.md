@@ -12,6 +12,52 @@ Backend API for the Kashmir Petroleum Dealers Association Union Registry applica
 - **TypeScript** for type safety
 - **Secure Password Handling** with bcrypt
 
+## API Documentation
+
+### Health & Diagnostics
+- `GET /health` — Returns API health status
+- `GET /test-db` — Returns MongoDB connection status
+
+### Authentication
+- `POST /api/auth/admin/login` — Admin login
+- `POST /api/auth/dealer/login` — Dealer login
+- `POST /api/auth/forgot-password` — Forgot password
+- `POST /api/auth/logout` — Logout
+
+### Users
+- `GET /api/users` — List all users
+- `POST /api/users` — Create user
+- `GET /api/users/:id` — Get user by ID
+- `PUT /api/users/:id` — Update user
+- `DELETE /api/users/:id` — Delete user
+
+### Dealers
+- `GET /api/admin/dealers` — List all dealers
+- `POST /api/admin/dealers` — Create dealer
+- `GET /api/admin/dealers/:id` — Get dealer by ID
+- `PUT /api/admin/dealers/:id` — Update dealer
+- `DELETE /api/admin/dealers/:id` — Delete dealer
+
+### Employees
+- `GET /api/dealer/employees` — List all employees for dealer
+- `POST /api/dealer/employees` — Create employee
+- `GET /api/dealer/employees/:id` — Get employee by ID
+- `PUT /api/dealer/employees/:id` — Update employee
+- `DELETE /api/dealer/employees/:id` — Delete employee
+
+### Customers
+- `GET /api/dealer/customers` — List all customers for dealer
+- `POST /api/dealer/customers` — Create customer
+- `GET /api/dealer/customers/:id` — Get customer by ID
+- `PUT /api/dealer/customers/:id` — Update customer
+- `DELETE /api/dealer/customers/:id` — Delete customer
+
+### Audit Logs
+- `GET /api/admin/audit-logs` — List all audit logs
+
+---
+For request/response formats, authentication details, and error codes, see inline comments in route/controller files.
+
 ## Technology Stack
 
 - **Runtime**: Node.js

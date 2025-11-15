@@ -14,23 +14,21 @@ export class AppError extends Error {
 }
 
 export const errorHandler = (
-  err: Error | AppError,
+  err: any,
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  if (err instanceof AppError) {
-    res.status(err.statusCode).json({
-      message: err.message,
-    });
-    return;
+  // Standardized error response
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'An unexpected error occurred.';
+  // Log full error for debugging
+  if (statusCode === 500) {
+    console.error('Unexpected error:', err);
   }
-
-  // Log unexpected errors
-  console.error('Unexpected error:', err);
-
-  res.status(500).json({
-    message: 'Internal server error',
+  res.status(statusCode).json({
+    message,
+    errors: err.errors || undefined,
   });
 };
 

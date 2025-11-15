@@ -33,28 +33,35 @@ const generateTempPassword = () => Math.random().toString(36).slice(-8);
 
 export const api = {
   // === AUTH ===
-  adminLogin: async (password: string): Promise<User> => {
-    await simulateDelay(500);
-    const user = users.find(u => u.role === UserRole.ADMIN);
-    if (user && user.password === password) {
-      currentUser = { ...user };
-      delete (currentUser as any).password;
-      addAuditLog({ action_type: AuditActionType.LOGIN, details: 'Admin logged in.' });
-      return currentUser;
+  adminLogin: async (password: string): Promise<{ token: string; user: User }> => {
+    const res = await fetch('/api/auth/admin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Invalid admin credentials');
     }
-    throw new Error("Invalid admin credentials.");
+    const data = await res.json();
+    // Store token for future requests
+    localStorage.setItem('token', data.token);
+    return data;
   },
 
-  dealerLogin: async (email: string, password: string): Promise<User> => {
-    await simulateDelay(500);
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.role === UserRole.DEALER);
-     if (user && user.password === password) {
-      currentUser = { ...user };
-      delete (currentUser as any).password;
-      addAuditLog({ action_type: AuditActionType.LOGIN, details: `Dealer logged in: ${user.name}` });
-      return currentUser;
+  dealerLogin: async (email: string, password: string): Promise<{ token: string; user: User }> => {
+    const res = await fetch('/api/auth/dealer-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Invalid dealer credentials');
     }
-    throw new Error("Invalid dealer credentials.");
+    const data = await res.json();
+    localStorage.setItem('token', data.token);
+    return data;
   },
   
   logout: async (): Promise<void> => {
@@ -105,81 +112,49 @@ export const api = {
   },
   
   createDealer: async (formData: Omit<Dealer, 'id' | 'status' | 'created_at' | 'user_id'> & { username: string }): Promise<{dealer: Dealer, tempPass: string}> => {
-    await simulateDelay(800);
-    if (dealers.some(d => d.company_name.trim().toLowerCase() === formData.company_name.trim().toLowerCase())) {
-        throw new Error("A dealer with this company name already exists.");
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/admin/dealers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(formData)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Dealer creation failed');
     }
-    if (users.some(u => u.email.toLowerCase() === formData.primary_contact_email.toLowerCase())) {
-        throw new Error("A user with this email already exists.");
-    }
-    if (users.some(u => u.username.toLowerCase() === formData.username.toLowerCase())) {
-        throw new Error("A user with this username already exists.");
-    }
-
-    const tempPass = generateTempPassword();
-    const newUserId = `user-${nextIds.user++}`;
-
-    const newDealerUser: any = {
-        id: newUserId,
-        role: UserRole.DEALER,
-        name: formData.primary_contact_name,
-        username: formData.username,
-        email: formData.primary_contact_email,
-        password: tempPass,
-        tempPass: true,
-    };
-    users.push(newDealerUser);
-
-    const newDealer: Dealer = {
-        id: `dealer-${nextIds.dealer++}`,
-        user_id: newUserId,
-        company_name: formData.company_name,
-        primary_contact_name: formData.primary_contact_name,
-        primary_contact_phone: formData.primary_contact_phone,
-        primary_contact_email: formData.primary_contact_email,
-        address: formData.address,
-        status: 'active',
-        created_at: new Date().toISOString(),
-    };
-    dealers.push(newDealer);
-    newDealerUser.dealerId = newDealer.id;
-
-    addAuditLog({ action_type: AuditActionType.CREATE_DEALER, details: `Created dealer: ${newDealer.company_name}`});
-    return { dealer: newDealer, tempPass };
+    return await res.json();
   },
   
   updateDealer: async (dealerId: UUID, data: Partial<Omit<Dealer, 'id' | 'user_id'>>): Promise<Dealer> => {
-    await simulateDelay(500);
-    const dealer = dealers.find(d => d.id === dealerId);
-    if (!dealer) throw new Error("Dealer not found");
-
-    if (data.company_name && data.company_name.trim().toLowerCase() !== dealer.company_name.trim().toLowerCase()) {
-      if (dealers.some(d => d.id !== dealerId && d.company_name.trim().toLowerCase() === data.company_name.trim().toLowerCase())) {
-        throw new Error("A dealer with this company name already exists.");
-      }
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/admin/dealers/${dealerId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Dealer update failed');
     }
-
-    Object.assign(dealer, data);
-    addAuditLog({ action_type: AuditActionType.UPDATE_DEALER, details: `Updated dealer: ${dealer.company_name}`});
-    return { ...dealer };
+    return await res.json();
   },
 
   deleteDealer: async(dealerId: UUID): Promise<void> => {
-    await simulateDelay(1000);
-    const dealerIndex = dealers.findIndex(d => d.id === dealerId);
-    if (dealerIndex === -1) throw new Error("Dealer not found");
-    
-    const deletedDealer = dealers[dealerIndex];
-    const userId = deletedDealer.user_id;
-
-    // In a real DB this would be a transaction. Here we do it manually.
-    const userIndex = users.findIndex(u => u.id === userId);
-    if (userIndex !== -1) {
-        users.splice(userIndex, 1);
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/admin/dealers/${dealerId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Dealer deletion failed');
     }
-    dealers.splice(dealerIndex, 1);
-    
-    addAuditLog({ action_type: AuditActionType.DELETE_DEALER, details: `Deleted dealer: ${deletedDealer.company_name}`});
   },
 
   resetDealerPassword: async (userId: UUID): Promise<string> => {
@@ -207,98 +182,124 @@ export const api = {
   
   // === DEALER ===
   getEmployees: async(): Promise<Employee[]> => {
-    await simulateDelay(400);
-    if (!currentUser || !currentUser.dealerId) throw new Error("Not authorized");
-    return employees.filter(e => e.dealer_id === currentUser!.dealerId);
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/dealer/employees', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch employees');
+    }
+    return await res.json();
   },
   
   createEmployee: async(employeeData: Omit<Employee, 'id' | 'dealer_id' | 'status'>): Promise<Employee> => {
-    await simulateDelay(600);
-    if (!currentUser || !currentUser.dealerId) throw new Error("Not authorized");
-    
-    const existingEmployee = employees.find(e => e.aadhar === employeeData.aadhar);
-    if (existingEmployee) {
-        const dealer = dealers.find(d => d.id === existingEmployee.dealer_id);
-        let message = `An employee with this Aadhar number already exists.`;
-        if (dealer) {
-            message += ` Current Employer: ${dealer.company_name} (Status: ${existingEmployee.status}).`;
-        }
-        throw new Error(message);
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/dealer/employees', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(employeeData)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Employee creation failed');
     }
-
-    const newEmployee: Employee = {
-        id: `emp-${nextIds.employee++}`,
-        dealer_id: currentUser.dealerId,
-        status: 'active',
-        ...employeeData
-    };
-    employees.push(newEmployee);
-    addAuditLog({ dealer_id: currentUser.dealerId, action_type: AuditActionType.CREATE_EMPLOYEE, details: `Created employee: ${newEmployee.first_name} ${newEmployee.last_name}` });
-    return newEmployee;
+    return await res.json();
   },
 
   updateEmployee: async(employeeId: UUID, data: Partial<Employee>): Promise<Employee> => {
-    await simulateDelay(400);
-    const employee = employees.find(e => e.id === employeeId);
-    if (!employee) throw new Error("Employee not found");
-
-    Object.assign(employee, data);
-    addAuditLog({ dealer_id: employee.dealer_id, action_type: AuditActionType.UPDATE_EMPLOYEE, details: `Updated employee: ${employee.first_name} ${employee.last_name}` });
-    return { ...employee };
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/dealer/employees/${employeeId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Employee update failed');
+    }
+    return await res.json();
   },
   
   terminateEmployee: async (employeeId: UUID, reason: string, date: string): Promise<Employee> => {
-    await simulateDelay(700);
-    const employee = employees.find(e => e.id === employeeId);
-    if (!employee) throw new Error("Employee not found");
-
-    if (new Date(date) < new Date(employee.hire_date)) {
-        throw new Error('Termination date cannot be earlier than the hire date.');
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/dealer/employees/${employeeId}/terminate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ reason, date })
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Employee termination failed');
     }
-
-    employee.status = 'terminated';
-    employee.termination_date = date;
-    employee.termination_reason = reason;
-
-    addAuditLog({ dealer_id: employee.dealer_id, action_type: AuditActionType.TERMINATE_EMPLOYEE, details: `Terminated employee: ${employee.first_name} ${employee.last_name}` });
-    return { ...employee };
+    return await res.json();
   },
 
   getCustomers: async(): Promise<Customer[]> => {
-    await simulateDelay(400);
-    if (!currentUser || !currentUser.dealerId) throw new Error("Not authorized");
-    return customers.filter(c => c.dealer_id === currentUser!.dealerId);
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/dealer/customers', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch customers');
+    }
+    return await res.json();
   },
   
   createCustomer: async(customerData: Omit<Customer, 'id' | 'dealer_id' | 'status'>): Promise<Customer> => {
-    await simulateDelay(600);
-    if (!currentUser || !currentUser.dealerId) throw new Error("Not authorized");
-
-    const newCustomer: Customer = {
-        id: `cust-${nextIds.customer++}`,
-        dealer_id: currentUser.dealerId,
-        status: 'active',
-        ...customerData
-    };
-    customers.push(newCustomer);
-    addAuditLog({ dealer_id: currentUser.dealerId, action_type: AuditActionType.CREATE_CUSTOMER, details: `Created customer: ${newCustomer.name_or_entity}` });
-    return newCustomer;
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/dealer/customers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(customerData)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Customer creation failed');
+    }
+    return await res.json();
   },
   
   updateCustomer: async(customerId: UUID, data: Partial<Customer>): Promise<Customer> => {
-    await simulateDelay(400);
-    const customer = customers.find(c => c.id === customerId);
-    if (!customer) throw new Error("Customer not found");
-
-    Object.assign(customer, data);
-    addAuditLog({ dealer_id: customer.dealer_id, action_type: AuditActionType.UPDATE_CUSTOMER, details: `Updated customer: ${customer.name_or_entity}` });
-    return { ...customer };
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/dealer/customers/${customerId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Customer update failed');
+    }
+    return await res.json();
   },
   
   getDealerAuditLogs: async(): Promise<AuditLog[]> => {
-    await simulateDelay(300);
-    if (!currentUser || !currentUser.dealerId) return [];
-    return auditLogs.filter(log => log.dealer_id === currentUser!.dealerId);
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/dealer/audit-logs', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || 'Failed to fetch dealer audit logs');
+    }
+    return await res.json();
   },
 
   // === UNIVERSAL ===

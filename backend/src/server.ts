@@ -2,6 +2,8 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import { config } from './config';
 import { errorHandler, notFound } from './middleware/errorHandler';
+const morgan = require('morgan');
+const Sentry = require('@sentry/node');
 
 // Import routes
 import authRoutes from './routes/authRoutes';
@@ -11,7 +13,7 @@ import dealerRoutes from './routes/dealerRoutes';
 import searchRoutes from './routes/searchRoutes';
 
 // Import database
-import pool from './database';
+import mongoose from 'mongoose';
 
 const app: Application = express();
 
@@ -25,14 +27,35 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware
-app.use((req: any, _res: any, next: any) => {
-  console.log(`${req.method} ${req.path}`);
-  next();
-});
+app.use(morgan('combined'));
 
 // Health check route
 app.get('/health', (_req: any, res: any) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Test MongoDB connection route
+app.get('/test-db', async (_req: any, res: any) => {
+  const state = mongoose.connection.readyState;
+  // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+  let status = '';
+  switch (state) {
+    case 0:
+      status = 'disconnected';
+      break;
+    case 1:
+      status = 'connected';
+      break;
+    case 2:
+      status = 'connecting';
+      break;
+    case 3:
+      status = 'disconnecting';
+      break;
+    default:
+      status = 'unknown';
+  }
+  res.json({ mongoState: status, timestamp: new Date().toISOString() });
 });
 
 // API Routes
@@ -46,14 +69,17 @@ app.use('/api', searchRoutes);
 app.use(notFound);
 
 // Error handler (must be last)
+app.use(Sentry.Handlers.errorHandler());
 app.use(errorHandler);
 
 // Start server
 const startServer = async () => {
   try {
-    // Test database connection
-    await pool.query('SELECT NOW()');
-    console.log('Database connected successfully');
+    await mongoose.connect(config.mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    } as any);
+    console.log('MongoDB connected successfully');
 
     app.listen(config.port, () => {
       console.log(`Server running on port ${config.port}`);
@@ -69,15 +95,16 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
-  await pool.end();
+  await mongoose.disconnect();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
-  await pool.end();
+  await mongoose.disconnect();
   process.exit(0);
 });
+startServer();
 
 startServer();
 

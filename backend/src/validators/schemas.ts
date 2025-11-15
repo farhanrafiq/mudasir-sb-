@@ -1,87 +1,87 @@
-import Joi from 'joi';
+import { z } from 'zod';
 
-export const adminLoginSchema = Joi.object({
-  password: Joi.string().required(),
+export const adminLoginSchema = z.object({
+  password: z.string().min(1),
 });
 
-export const dealerLoginSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().required(),
+export const dealerLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
 });
 
-export const forgotPasswordSchema = Joi.object({
-  email: Joi.string().email().required(),
+export const forgotPasswordSchema = z.object({
+  email: z.string().email(),
 });
 
-export const changePasswordSchema = Joi.object({
-  newPassword: Joi.string().min(8).required(),
+export const changePasswordSchema = z.object({
+  newPassword: z.string().min(8),
 });
 
-export const updateProfileSchema = Joi.object({
-  name: Joi.string().optional(),
-  username: Joi.string().alphanum().min(3).max(30).optional(),
-}).min(1);
+export const updateProfileSchema = z.object({
+  name: z.string().optional(),
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9]+$/).optional(),
+}).refine((data: Record<string, unknown>) => Object.keys(data).length > 0, { message: 'At least one field required' });
 
-export const createDealerSchema = Joi.object({
-  company_name: Joi.string().required(),
-  primary_contact_name: Joi.string().required(),
-  primary_contact_phone: Joi.string().pattern(/^[0-9]{10}$/).required(),
-  primary_contact_email: Joi.string().email().required(),
-  address: Joi.string().required(),
-  username: Joi.string().alphanum().min(3).max(30).required(),
-  name: Joi.string().required(),
+export const createDealerSchema = z.object({
+  company_name: z.string().min(1),
+  primary_contact_name: z.string().min(1),
+  primary_contact_phone: z.string().regex(/^[0-9]{10}$/),
+  primary_contact_email: z.string().email(),
+  address: z.string().min(1),
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9]+$/),
+  name: z.string().min(1),
 });
 
-export const updateDealerSchema = Joi.object({
-  company_name: Joi.string().optional(),
-  primary_contact_name: Joi.string().optional(),
-  primary_contact_phone: Joi.string().pattern(/^[0-9]{10}$/).optional(),
-  primary_contact_email: Joi.string().email().optional(),
-  address: Joi.string().optional(),
-  status: Joi.string().valid('active', 'suspended').optional(),
-}).min(1);
+export const updateDealerSchema = z.object({
+  company_name: z.string().optional(),
+  primary_contact_name: z.string().optional(),
+  primary_contact_phone: z.string().regex(/^[0-9]{10}$/).optional(),
+  primary_contact_email: z.string().email().optional(),
+  address: z.string().optional(),
+  status: z.enum(['active', 'suspended']).optional(),
+}).refine((data: Record<string, unknown>) => Object.keys(data).length > 0, { message: 'At least one field required' });
 
-export const createEmployeeSchema = Joi.object({
-  first_name: Joi.string().required(),
-  last_name: Joi.string().required(),
-  phone: Joi.string().pattern(/^[0-9]{10}$/).required(),
-  email: Joi.string().email().required(),
-  aadhar: Joi.string().pattern(/^[0-9]{12}$/).required(),
-  position: Joi.string().required(),
-  hire_date: Joi.date().iso().max('now').required(),
+export const createEmployeeSchema = z.object({
+  first_name: z.string().min(1),
+  last_name: z.string().min(1),
+  phone: z.string().regex(/^[0-9]{10}$/),
+  email: z.string().email(),
+  aadhar: z.string().regex(/^[0-9]{12}$/),
+  position: z.string().min(1),
+  hire_date: z.string().refine((val: string) => !isNaN(Date.parse(val)), { message: 'Invalid date' }),
 });
 
-export const updateEmployeeSchema = Joi.object({
-  first_name: Joi.string().optional(),
-  last_name: Joi.string().optional(),
-  phone: Joi.string().pattern(/^[0-9]{10}$/).optional(),
-  email: Joi.string().email().optional(),
-  position: Joi.string().optional(),
-  hire_date: Joi.date().iso().optional(),
-}).min(1);
+export const updateEmployeeSchema = z.object({
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  phone: z.string().regex(/^[0-9]{10}$/).optional(),
+  email: z.string().email().optional(),
+  position: z.string().optional(),
+  hire_date: z.string().refine((val: string) => !isNaN(Date.parse(val)), { message: 'Invalid date' }).optional(),
+}).refine((data: Record<string, unknown>) => Object.keys(data).length > 0, { message: 'At least one field required' });
 
-export const terminateEmployeeSchema = Joi.object({
-  reason: Joi.string().required(),
-  date: Joi.date().iso().max('now').required(),
+export const terminateEmployeeSchema = z.object({
+  reason: z.string().min(1),
+  date: z.string().refine((val: string) => !isNaN(Date.parse(val)), { message: 'Invalid date' })
 });
 
-export const createCustomerSchema = Joi.object({
-  type: Joi.string().valid('private', 'government').required(),
-  name_or_entity: Joi.string().required(),
-  contact_person: Joi.string().allow('', null).optional(),
-  phone: Joi.string().pattern(/^[0-9]{10}$/).required(),
-  email: Joi.string().email().required(),
-  official_id: Joi.string().required(),
-  address: Joi.string().required(),
+export const createCustomerSchema = z.object({
+  type: z.enum(['private', 'government']),
+  name_or_entity: z.string().min(1),
+  contact_person: z.string().optional(),
+  phone: z.string().regex(/^[0-9]{10}$/),
+  email: z.string().email(),
+  official_id: z.string().min(1),
+  address: z.string().min(1)
 });
 
-export const updateCustomerSchema = Joi.object({
-  type: Joi.string().valid('private', 'government').optional(),
-  name_or_entity: Joi.string().optional(),
-  contact_person: Joi.string().allow('', null).optional(),
-  phone: Joi.string().pattern(/^[0-9]{10}$/).optional(),
-  email: Joi.string().email().optional(),
-  official_id: Joi.string().optional(),
-  address: Joi.string().optional(),
-  status: Joi.string().valid('active', 'inactive').optional(),
-}).min(1);
+export const updateCustomerSchema = z.object({
+  type: z.enum(['private', 'government']).optional(),
+  name_or_entity: z.string().optional(),
+  contact_person: z.string().optional(),
+  phone: z.string().regex(/^[0-9]{10}$/).optional(),
+  email: z.string().email().optional(),
+  official_id: z.string().optional(),
+  address: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional()
+}).refine((data: Record<string, unknown>) => Object.keys(data).length > 0, { message: 'At least one field required' });
