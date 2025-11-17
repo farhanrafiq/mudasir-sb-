@@ -2,8 +2,11 @@
 import { jest } from '@jest/globals';
 
 
-function MockSchema(definition: any) {
-  this.obj = definition;
+class MockSchema {
+  obj: any;
+  constructor(definition: any) {
+    this.obj = definition;
+  }
 }
 // Attach Types as a static property
 Object.defineProperty(MockSchema, 'Types', {
@@ -21,13 +24,12 @@ export const connection = {
   on: jest.fn(),
   close: jest.fn(),
 };
-export const model = jest.fn(() => ({
-  find: jest.fn().mockResolvedValue([]),
-  findById: jest.fn().mockResolvedValue(null),
-  findByIdAndUpdate: jest.fn().mockResolvedValue(null),
-  findByIdAndDelete: jest.fn().mockResolvedValue(null),
-  save: jest.fn().mockResolvedValue(true),
-  deleteMany: jest.fn().mockResolvedValue(true),
+  find: jest.fn().mockResolvedValue([] as any),
+  findById: jest.fn().mockResolvedValue(null as any),
+  findByIdAndUpdate: jest.fn().mockResolvedValue(null as any),
+  findByIdAndDelete: jest.fn().mockResolvedValue(null as any),
+  save: jest.fn().mockResolvedValue(true as any),
+  deleteMany: jest.fn().mockResolvedValue(true as any),
 }));
 export const Types = {
   ObjectId: jest.fn(() => 'mock-object-id'),
