@@ -1,5 +1,5 @@
 // FIX: Import AuditActionType enum to resolve reference errors.
-import { User, Dealer, Employee, Customer, AuditLog, UserRole, AuditActionType } from '../types';
+import { Dealer, Employee, Customer, AuditLog, UserRole, AuditActionType } from '../types';
 
 export const nextIds = {
     user: 10,

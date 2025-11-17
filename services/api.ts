@@ -1,11 +1,11 @@
-import { users, dealers, employees, customers, auditLogs, nextIds } from './mockData';
+import { users, dealers, employees, auditLogs, nextIds } from './mockData';
 import { 
     Dealer, 
     Employee, 
     Customer, 
     AuditLog, 
     GlobalSearchResult, 
-    UserRole, 
+    // UserRole (unused)
     AuditActionType,
     UUID, 
     User
@@ -81,7 +81,7 @@ export const api = {
     delete (currentUser as any).password;
 
     addAuditLog({ action_type: AuditActionType.CHANGE_PASSWORD, details: 'User changed their password.' });
-    return currentUser;
+    return currentUser as User;
   },
   
   updateUserProfile: async (userId: UUID, data: { name: string; username: string }): Promise<User> => {

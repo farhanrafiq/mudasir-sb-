@@ -17,8 +17,8 @@ Object.defineProperty(MockSchema, 'Types', {
 });
 
 
-export const connect = jest.fn().mockResolvedValue(true);
-export const disconnect = jest.fn().mockResolvedValue(true);
+export const connect = jest.fn();
+export const disconnect = jest.fn();
 export const connection = {
   readyState: 1,
   on: jest.fn(),
@@ -26,12 +26,12 @@ export const connection = {
 };
 
 export const model = jest.fn(() => ({
-  find: jest.fn().mockResolvedValue([] as any),
-  findById: jest.fn().mockResolvedValue(null as any),
-  findByIdAndUpdate: jest.fn().mockResolvedValue(null as any),
-  findByIdAndDelete: jest.fn().mockResolvedValue(null as any),
-  save: jest.fn().mockResolvedValue(true as any),
-  deleteMany: jest.fn().mockResolvedValue(true as any),
+  find: jest.fn(),
+  findById: jest.fn(),
+  findByIdAndUpdate: jest.fn(),
+  findByIdAndDelete: jest.fn(),
+  save: jest.fn(),
+  deleteMany: jest.fn(),
 }));
 export const Types = {
   ObjectId: jest.fn(() => 'mock-object-id'),

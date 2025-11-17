@@ -1,4 +1,4 @@
-export const logout = async (req: AuthRequest, res: Response): Promise<void> => {
+export const logout = async (_: AuthRequest, res: Response): Promise<void> => {
   // Invalidate token on client side; server-side logout is stateless for JWT
   res.status(200).json({ message: 'Logged out successfully.' });
 };

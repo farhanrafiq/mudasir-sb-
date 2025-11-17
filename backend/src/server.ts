@@ -78,23 +78,7 @@ if (Sentry.Handlers && Sentry.Handlers.errorHandler) {
 app.use(errorHandler);
 
 // Start server
-const startServer = async () => {
-  try {
-    const mongoUri = process.env.NODE_ENV === 'test' ? (process.env.TEST_MONGO_URI || 'mongodb://localhost:27017/testdb') : config.mongoUri;
-    await mongoose.connect(mongoUri);
-    console.log('MongoDB connected successfully');
-
-    const port = process.env.NODE_ENV === 'test' ? 0 : config.port;
-    app.listen(port, () => {
-      console.log(`Server running on port ${port}`);
-      console.log(`Environment: ${config.nodeEnv}`);
-      console.log(`CORS origin: ${config.cors.origin}`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
-};
+// Removed unused startServer function
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {

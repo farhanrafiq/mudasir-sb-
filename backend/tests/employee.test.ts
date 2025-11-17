@@ -1,6 +1,6 @@
-const request = require('supertest');
-const app = require('../src/server').default;
-const { createServer } = require('http');
+import request from 'supertest';
+import app from '../src/server';
+import { createServer } from 'http';
 const server = createServer(app);
 
 describe('Employee API', () => {
