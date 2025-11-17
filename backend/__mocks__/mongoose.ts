@@ -19,6 +19,7 @@ Object.defineProperty(MockSchema, 'Types', {
 
 export const connect = jest.fn().mockResolvedValue(true);
 export const disconnect = jest.fn().mockResolvedValue(true);
+export const connection = {
   readyState: 1,
   on: jest.fn(),
   close: jest.fn(),
