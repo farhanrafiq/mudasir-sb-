@@ -8,13 +8,13 @@ export function validate(schema: ZodSchema) {
 			if (!result.success) {
 				return res.status(400).json({
 					message: 'Validation error',
-					errors: result.error.errors,
+					errors: (result.error as any).errors,
 				});
 			}
 			req.body = result.data;
-			next();
+			return next();
 		} catch (err) {
-			next(err);
+			return next(err);
 		}
 	};
 }

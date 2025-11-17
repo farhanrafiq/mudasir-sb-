@@ -9,9 +9,10 @@ router.post('/', validate(createEmployeeSchema), async (req, res) => {
   try {
     const employee = new EmployeeModel(req.body);
     await employee.save();
-    res.status(201).json(employee);
+    return res.status(201).json(employee);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const error = err as Error;
+    return res.status(400).json({ error: error.message });
   }
 });
 
@@ -19,9 +20,10 @@ router.post('/', validate(createEmployeeSchema), async (req, res) => {
 router.get('/', async (_req, res) => {
   try {
     const employees = await EmployeeModel.find();
-    res.json(employees);
+    return res.json(employees);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -31,9 +33,10 @@ router.get('/:id', async (req, res) => {
   try {
     const employee = await EmployeeModel.findById(req.params.id);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    res.json(employee);
+    return res.json(employee);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -42,9 +45,10 @@ router.put('/:id', validate(updateEmployeeSchema), async (req, res) => {
   try {
     const employee = await EmployeeModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    res.json(employee);
+    return res.json(employee);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const error = err as Error;
+    return res.status(400).json({ error: error.message });
   }
 });
 
@@ -53,9 +57,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const employee = await EmployeeModel.findByIdAndDelete(req.params.id);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    res.json({ message: 'Employee deleted' });
+    return res.json({ message: 'Employee deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -68,9 +73,10 @@ router.post('/:id/terminate', validate(terminateEmployeeSchema), async (req, res
       { new: true }
     );
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
-    res.json(employee);
+    return res.json(employee);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const error = err as Error;
+    return res.status(400).json({ error: error.message });
   }
 });
 
@@ -87,8 +93,9 @@ router.get('/search/all', async (req, res) => {
         { aadhar: { $regex: query, $options: 'i' } }
       ]
     });
-    res.json(employees);
+    return res.json(employees);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });

@@ -10,15 +10,16 @@ router.put('/me/password', authenticate, validate(changePasswordSchema), changeP
 router.put('/me/profile', authenticate, validate(updateProfileSchema), updateProfile);
 
 // Create User
-import { UserModel } from '../models/User';
+import UserModel from '../models/User';
 import { createDealerSchema } from '../validators/schemas';
 router.post('/', validate(createDealerSchema), async (req, res) => {
 	try {
 		const user = new UserModel(req.body);
 		await user.save();
-		res.status(201).json(user);
+		return res.status(201).json(user);
 	} catch (err) {
-		res.status(400).json({ error: err.message });
+		const error = err as Error;
+		return res.status(400).json({ error: error.message });
 	}
 });
 
@@ -26,9 +27,10 @@ router.post('/', validate(createDealerSchema), async (req, res) => {
 router.get('/', async (_req, res) => {
 	try {
 		const users = await UserModel.find();
-		res.json(users);
+		return res.json(users);
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		const error = err as Error;
+		return res.status(500).json({ error: error.message });
 	}
 });
 
@@ -37,9 +39,10 @@ router.get('/:id', async (req, res) => {
 	try {
 		const user = await UserModel.findById(req.params.id);
 		if (!user) return res.status(404).json({ error: 'User not found' });
-		res.json(user);
+		return res.json(user);
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		const error = err as Error;
+		return res.status(500).json({ error: error.message });
 	}
 });
 
@@ -48,9 +51,10 @@ router.put('/:id', validate(updateProfileSchema), async (req, res) => {
 	try {
 		const user = await UserModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
 		if (!user) return res.status(404).json({ error: 'User not found' });
-		res.json(user);
+		return res.json(user);
 	} catch (err) {
-		res.status(400).json({ error: err.message });
+		const error = err as Error;
+		return res.status(400).json({ error: error.message });
 	}
 });
 
@@ -59,9 +63,10 @@ router.delete('/:id', async (req, res) => {
 	try {
 		const user = await UserModel.findByIdAndDelete(req.params.id);
 		if (!user) return res.status(404).json({ error: 'User not found' });
-		res.json({ message: 'User deleted' });
+		return res.json({ message: 'User deleted' });
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		const error = err as Error;
+		return res.status(500).json({ error: error.message });
 	}
 });
 

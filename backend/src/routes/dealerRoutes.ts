@@ -25,16 +25,17 @@ const router = Router();
 router.use(authenticate, requireDealer);
 
 // General Dealer CRUD endpoints
-import { DealerModel } from '../models/Dealer';
+import DealerModel from '../models/Dealer';
 // Create Dealer
 import { createDealerSchema, updateDealerSchema } from '../validators/schemas';
 router.post('/', validate(createDealerSchema), async (req, res) => {
   try {
     const dealer = new DealerModel(req.body);
     await dealer.save();
-    res.status(201).json(dealer);
+    return res.status(201).json(dealer);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const error = err as Error;
+    return res.status(400).json({ error: error.message });
   }
 });
 
@@ -42,9 +43,10 @@ router.post('/', validate(createDealerSchema), async (req, res) => {
 router.get('/', async (_req, res) => {
   try {
     const dealers = await DealerModel.find();
-    res.json(dealers);
+    return res.json(dealers);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -53,9 +55,10 @@ router.get('/:id', async (req, res) => {
   try {
     const dealer = await DealerModel.findById(req.params.id);
     if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
-    res.json(dealer);
+    return res.json(dealer);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -64,27 +67,29 @@ router.put('/:id', validate(updateDealerSchema), async (req, res) => {
   try {
     const dealer = await DealerModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
-    res.json(dealer);
+    return res.json(dealer);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const error = err as Error;
+    return res.status(400).json({ error: error.message });
   }
 });
 
 // Delete Dealer
-import { Employee } from '../models/Employee';
-import { Customer } from '../models/Customer';
+import EmployeeModel from '../models/Employee';
+import CustomerModel from '../models/Customer';
 router.delete('/:id', async (req, res) => {
   try {
     const dealer = await DealerModel.findByIdAndDelete(req.params.id);
     if (!dealer) return res.status(404).json({ error: 'Dealer not found' });
 
     // Cascading delete: remove all employees and customers for this dealer
-    await Employee.deleteMany({ dealer: req.params.id });
-    await Customer.deleteMany({ dealer: req.params.id });
+    await EmployeeModel.deleteMany({ dealer: req.params.id });
+    await CustomerModel.deleteMany({ dealer: req.params.id });
 
-    res.json({ message: 'Dealer and all related employees/customers deleted' });
+    return res.json({ message: 'Dealer and all related employees/customers deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const error = err as Error;
+    return res.status(500).json({ error: error.message });
   }
 });
 
