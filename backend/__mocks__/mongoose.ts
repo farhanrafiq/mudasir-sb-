@@ -19,11 +19,12 @@ Object.defineProperty(MockSchema, 'Types', {
 
 export const connect = jest.fn().mockResolvedValue(true);
 export const disconnect = jest.fn().mockResolvedValue(true);
-export const connection = {
   readyState: 1,
   on: jest.fn(),
   close: jest.fn(),
 };
+
+export const model = jest.fn(() => ({
   find: jest.fn().mockResolvedValue([] as any),
   findById: jest.fn().mockResolvedValue(null as any),
   findByIdAndUpdate: jest.fn().mockResolvedValue(null as any),
