@@ -1,4 +1,4 @@
-import express from 'express';
+import * as express from 'express';
 import AuditLogModel from '../models/AuditLog';
 const router = express.Router();
 

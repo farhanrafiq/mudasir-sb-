@@ -1,9 +1,12 @@
-import express, { Application } from 'express';
-import cors from 'cors';
+import * as express from 'express';
+import * as cors from 'cors';
 import { config } from './config';
 import { errorHandler, notFound } from './middleware/errorHandler';
 const morgan = require('morgan');
 const Sentry = require('@sentry/node');
+if (process.env.SENTRY_DSN) {
+  Sentry.init({ dsn: process.env.SENTRY_DSN });
+}
 
 // Import routes
 import authRoutes from './routes/authRoutes';
@@ -15,7 +18,7 @@ import searchRoutes from './routes/searchRoutes';
 // Import database
 import mongoose from 'mongoose';
 
-const app: Application = express();
+const app = express();
 
 // Middleware
 app.use(cors({
@@ -69,20 +72,21 @@ app.use('/api', searchRoutes);
 app.use(notFound);
 
 // Error handler (must be last)
-app.use(Sentry.Handlers.errorHandler());
+if (Sentry.Handlers && Sentry.Handlers.errorHandler) {
+  app.use(Sentry.Handlers.errorHandler());
+}
 app.use(errorHandler);
 
 // Start server
 const startServer = async () => {
   try {
-    await mongoose.connect(config.mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    } as any);
+    const mongoUri = process.env.NODE_ENV === 'test' ? (process.env.TEST_MONGO_URI || 'mongodb://localhost:27017/testdb') : config.mongoUri;
+    await mongoose.connect(mongoUri);
     console.log('MongoDB connected successfully');
 
-    app.listen(config.port, () => {
-      console.log(`Server running on port ${config.port}`);
+    const port = process.env.NODE_ENV === 'test' ? 0 : config.port;
+    app.listen(port, () => {
+      console.log(`Server running on port ${port}`);
       console.log(`Environment: ${config.nodeEnv}`);
       console.log(`CORS origin: ${config.cors.origin}`);
     });
@@ -104,8 +108,5 @@ process.on('SIGINT', async () => {
   await mongoose.disconnect();
   process.exit(0);
 });
-startServer();
-
-startServer();
 
 export default app;

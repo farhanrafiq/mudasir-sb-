@@ -1,4 +1,4 @@
-import express from 'express';
+import * as express from 'express';
 import EmployeeModel from '../models/Employee';
 const router = express.Router();
 
