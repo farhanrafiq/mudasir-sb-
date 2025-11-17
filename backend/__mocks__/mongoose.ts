@@ -1,8 +1,6 @@
 // __mocks__/mongoose.ts
 import { jest } from '@jest/globals';
 
-import { jest } from '@jest/globals';
-
 
 function MockSchema(definition: any) {
   this.obj = definition;
