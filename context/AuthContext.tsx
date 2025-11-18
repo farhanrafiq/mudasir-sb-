@@ -41,12 +41,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const dealerLogin = async (email: string, password: string) => {
     const loggedInUser = await api.dealerLogin(email, password);
-    handleLoginSuccess(loggedInUser.user);
+    handleLoginSuccess(loggedInUser);
   };
 
   const adminLogin = async (password: string) => {
     const loggedInUser = await api.adminLogin(password);
-    handleLoginSuccess(loggedInUser.user);
+    handleLoginSuccess(loggedInUser);
   };
 
   const logout = async () => {

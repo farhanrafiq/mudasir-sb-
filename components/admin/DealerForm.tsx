@@ -5,7 +5,7 @@ import Button from '../common/Button';
 
 interface DealerFormProps {
   dealer: Dealer | null;
-  onSave: (data: Omit<Dealer, 'id' | 'status' | 'created_at' | 'user_id'> & { username: string }) => Promise<void>;
+  onSave: (data: Omit<Dealer, 'id' | 'status' | 'created_at' | 'user_id'>) => Promise<void>;
   onCancel: () => void;
   formError?: string;
 }
@@ -54,7 +54,7 @@ const DealerForm: React.FC<DealerFormProps> = ({ dealer, onSave, onCancel, formE
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onSave({ ...formData, username: formData.primary_contact_name });
+        await onSave(formData);
     } catch (e) {
         // Parent component handles showing the error.
     } finally {

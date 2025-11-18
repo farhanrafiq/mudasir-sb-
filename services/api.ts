@@ -1,359 +1,583 @@
-import { users, dealers, employees, auditLogs, nextIds } from './mockData';
 import { 
     Dealer, 
     Employee, 
     Customer, 
     AuditLog, 
     GlobalSearchResult, 
-    // UserRole (unused)
-    AuditActionType,
     UUID, 
-    User
+    User,
+    UserRole,
+    AuditActionType
 } from '../types';
+import { db, auth } from '../firebase';
+import { 
+    collection, 
+    getDocs, 
+    updateDoc, 
+    doc, 
+    deleteDoc, 
+    query, 
+    where, 
+    setDoc,
+    getDoc
+} from 'firebase/firestore';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { users as mockUsers, dealers as mockDealers, employees as mockEmployees, customers as mockCustomers, auditLogs as mockAuditLogs } from './mockData';
 
-// --- HELPERS ---
-const simulateDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
+// Feature flag: Set VITE_USE_FIREBASE='true' in .env to switch to Google Cloud
+// Safely access env to prevent crashes if import.meta.env is undefined
+const env = (import.meta as any).env || {};
+const USE_FIREBASE = env.VITE_USE_FIREBASE === 'true' && !!db && !!auth;
 
-let currentUser: User | null = null;
+// Export status for UI components
+export const isCloudMode = USE_FIREBASE;
 
-const addAuditLog = (entry: Omit<AuditLog, 'id' | 'timestamp' | 'who_user_id' | 'who_user_name'>) => {
-    if (!currentUser) return;
-    const newLog: AuditLog = {
-        id: nextIds.audit++,
-        timestamp: new Date().toISOString(),
-        who_user_id: currentUser.id,
-        who_user_name: currentUser.name,
-        ...entry,
-    };
-    auditLogs.unshift(newLog);
+console.log(`[App] Running in ${USE_FIREBASE ? 'FIREBASE (Google Cloud)' : 'MOCK (Local Storage)'} mode.`);
+
+// --- LocalStorage Helpers (Mock Mode) ---
+const STORAGE_KEYS = {
+    USERS: 'union_users',
+    DEALERS: 'union_dealers',
+    EMPLOYEES: 'union_employees',
+    CUSTOMERS: 'union_customers',
+    LOGS: 'union_logs'
 };
 
-const generateTempPassword = () => Math.random().toString(36).slice(-8);
+const initStorage = () => {
+    if (!localStorage.getItem(STORAGE_KEYS.USERS)) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(mockUsers));
+    if (!localStorage.getItem(STORAGE_KEYS.DEALERS)) localStorage.setItem(STORAGE_KEYS.DEALERS, JSON.stringify(mockDealers));
+    if (!localStorage.getItem(STORAGE_KEYS.EMPLOYEES)) localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(mockEmployees));
+    if (!localStorage.getItem(STORAGE_KEYS.CUSTOMERS)) localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(mockCustomers));
+    if (!localStorage.getItem(STORAGE_KEYS.LOGS)) localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(mockAuditLogs));
+};
 
+// Initialize mock data immediately if not using Firebase
+if (!USE_FIREBASE) {
+    initStorage();
+}
+
+const getLocal = <T>(key: string): T[] => JSON.parse(localStorage.getItem(key) || '[]');
+const setLocal = <T>(key: string, data: T[]) => localStorage.setItem(key, JSON.stringify(data));
+const delay = (ms: number = 500) => new Promise(resolve => setTimeout(resolve, ms));
+
+// --- API Implementation ---
 
 export const api = {
   // === AUTH ===
-  adminLogin: async (password: string): Promise<{ token: string; user: User }> => {
-    const res = await fetch('/api/auth/admin-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Invalid admin credentials');
+  adminLogin: async (password: string): Promise<User> => {
+    if (USE_FIREBASE && auth && db) {
+        // For demo purposes in Firebase mode, we'd need a real email/pass login.
+        // Assuming admin email is admin@union.org for this example.
+        const userCredential = await signInWithEmailAndPassword(auth, 'admin@union.org', password);
+        // Fetch user role from Firestore 'users' collection
+        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+        if (userDoc.exists()) {
+            const userData = userDoc.data() as User;
+            if (userData.role === UserRole.ADMIN) return { ...userData, id: userCredential.user.uid };
+        }
+        throw new Error('Unauthorized access or user profile missing.');
+    } else {
+        await delay();
+        const users = getLocal<User & { password: string }>(STORAGE_KEYS.USERS);
+        const admin = users.find(u => u.role === UserRole.ADMIN && u.password === password); 
+        if (!admin) throw new Error('Invalid password');
+        
+        // Log action
+        const newLog: AuditLog = {
+            id: Date.now(),
+            who_user_id: admin.id,
+            who_user_name: admin.name,
+            action_type: AuditActionType.LOGIN,
+            details: 'Admin logged in',
+            timestamp: new Date().toISOString()
+        };
+        const logs = getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+        setLocal(STORAGE_KEYS.LOGS, [newLog, ...logs]);
+        
+        return admin;
     }
-    const data = await res.json();
-    // Store token for future requests
-    localStorage.setItem('token', data.token);
-    return data;
   },
 
-  dealerLogin: async (email: string, password: string): Promise<{ token: string; user: User }> => {
-    const res = await fetch('/api/auth/dealer-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Invalid dealer credentials');
+  dealerLogin: async (email: string, password: string): Promise<User> => {
+    if (USE_FIREBASE && auth && db) {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+        if (userDoc.exists()) {
+             const userData = userDoc.data() as User;
+             return { ...userData, id: userCredential.user.uid };
+        }
+        throw new Error('User profile not found in database');
+    } else {
+        await delay();
+        const users = getLocal<User & { password: string }>(STORAGE_KEYS.USERS);
+        const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+        if (!user) throw new Error('Invalid email or password');
+        
+        const newLog: AuditLog = {
+            id: Date.now(),
+            who_user_id: user.id,
+            who_user_name: user.name,
+            dealer_id: user.dealerId,
+            action_type: AuditActionType.LOGIN,
+            details: 'Dealer logged in',
+            timestamp: new Date().toISOString()
+        };
+        const logs = getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+        setLocal(STORAGE_KEYS.LOGS, [newLog, ...logs]);
+
+        return user;
     }
-    const data = await res.json();
-    localStorage.setItem('token', data.token);
-    return data;
   },
   
   logout: async (): Promise<void> => {
-      await simulateDelay(100);
-      currentUser = null;
+      if (USE_FIREBASE && auth) {
+          await signOut(auth);
+      } else {
+          await delay(200);
+      }
   },
 
   changePassword: async(userId: UUID, newPass: string): Promise<User> => {
-    await simulateDelay(500);
-    const user = users.find(u => u.id === userId);
-    if (!user) throw new Error("User not found.");
-    user.password = newPass;
-    user.tempPass = false;
-    
-    // re-authenticate to get a fresh user object without password
-    currentUser = { ...user };
-    delete (currentUser as any).password;
+    if (USE_FIREBASE && db) {
+        // In a real app, you'd call updatePassword(auth.currentUser, newPass);
+        await updateDoc(doc(db, 'users', userId), { tempPass: false });
+        const updated = await getDoc(doc(db, 'users', userId));
+        return { ...updated.data(), id: userId } as User;
+    } else {
+        await delay();
+        const users = getLocal<User & { password: string }>(STORAGE_KEYS.USERS);
+        const idx = users.findIndex(u => u.id === userId);
+        if (idx === -1) throw new Error('User not found');
+        
+        users[idx].password = newPass;
+        users[idx].tempPass = false;
+        setLocal(STORAGE_KEYS.USERS, users);
+        
+        // Audit
+        const logs = getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+        logs.unshift({
+            id: Date.now(),
+            who_user_id: userId,
+            who_user_name: users[idx].name,
+            action_type: AuditActionType.CHANGE_PASSWORD,
+            details: 'User changed password',
+            timestamp: new Date().toISOString()
+        });
+        setLocal(STORAGE_KEYS.LOGS, logs);
 
-    addAuditLog({ action_type: AuditActionType.CHANGE_PASSWORD, details: 'User changed their password.' });
-    return currentUser as User;
+        return users[idx];
+    }
   },
   
   updateUserProfile: async (userId: UUID, data: { name: string; username: string }): Promise<User> => {
-    await simulateDelay(300);
-    const user = users.find(u => u.id === userId);
-    if (!user) throw new Error("User not found.");
-    user.name = data.name;
-    user.username = data.username;
-    if (currentUser?.id === userId) {
-        currentUser.name = data.name;
-        currentUser.username = data.username;
-    }
-    addAuditLog({ action_type: AuditActionType.UPDATE_PROFILE, details: 'User updated their profile.' });
-    const userWithoutPassword = { ...user };
-    delete (userWithoutPassword as any).password;
-    return userWithoutPassword;
+      if (USE_FIREBASE && db) {
+        await updateDoc(doc(db, 'users', userId), data);
+        const u = await getDoc(doc(db, 'users', userId));
+        return { ...u.data(), id: userId } as User;
+      } else {
+        await delay();
+        const users = getLocal<User>(STORAGE_KEYS.USERS);
+        const idx = users.findIndex(u => u.id === userId);
+        if (idx === -1) throw new Error('User not found');
+        
+        users[idx] = { ...users[idx], ...data };
+        setLocal(STORAGE_KEYS.USERS, users);
+        return users[idx];
+      }
   },
 
   // === ADMIN ===
   getDealers: async (): Promise<Dealer[]> => {
-      await simulateDelay(500);
-      return [...dealers].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      if (USE_FIREBASE && db) {
+          const snapshot = await getDocs(collection(db, 'dealers'));
+          return snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Dealer));
+      } else {
+          await delay();
+          return getLocal<Dealer>(STORAGE_KEYS.DEALERS);
+      }
   },
 
   getAuditLogs: async (): Promise<AuditLog[]> => {
-    await simulateDelay(300);
-    return auditLogs;
+    if (USE_FIREBASE && db) {
+        const q = query(collection(db, 'audit_logs')); 
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => d.data() as AuditLog).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    } else {
+        await delay();
+        return getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+    }
   },
   
   createDealer: async (formData: Omit<Dealer, 'id' | 'status' | 'created_at' | 'user_id'> & { username: string }): Promise<{dealer: Dealer, tempPass: string}> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/admin/dealers', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(formData)
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Dealer creation failed');
-    }
-    return await res.json();
+      const tempPass = Math.random().toString(36).slice(-8);
+      const newId = crypto.randomUUID();
+      const userId = crypto.randomUUID();
+
+      const newDealer: Dealer = {
+          id: newId,
+          user_id: userId,
+          company_name: formData.company_name,
+          primary_contact_name: formData.primary_contact_name,
+          primary_contact_email: formData.primary_contact_email,
+          primary_contact_phone: formData.primary_contact_phone,
+          address: formData.address,
+          status: 'active',
+          created_at: new Date().toISOString()
+      };
+
+      const newUser: User & { password: string } = {
+          id: userId,
+          role: UserRole.DEALER,
+          name: formData.company_name,
+          username: formData.username,
+          email: formData.primary_contact_email,
+          dealerId: newId,
+          tempPass: true,
+          password: tempPass 
+      };
+
+      if (USE_FIREBASE && db) {
+          // Write to Firestore. 
+          // Note: In a real app, User creation in Auth should happen via a Firebase Cloud Function or Admin SDK.
+          // Here we simulate by writing to DB only.
+          await setDoc(doc(db, 'dealers', newId), newDealer);
+          await setDoc(doc(db, 'users', userId), { ...newUser, password: 'HIDDEN' }); 
+          return { dealer: newDealer, tempPass: 'ForRealAuthUseConsole' };
+      } else {
+          await delay();
+          const dealers = getLocal<Dealer>(STORAGE_KEYS.DEALERS);
+          const users = getLocal<User>(STORAGE_KEYS.USERS);
+          
+          setLocal(STORAGE_KEYS.DEALERS, [newDealer, ...dealers]);
+          setLocal(STORAGE_KEYS.USERS, [...users, newUser]);
+          
+          return { dealer: newDealer, tempPass };
+      }
   },
   
   updateDealer: async (dealerId: UUID, data: Partial<Omit<Dealer, 'id' | 'user_id'>>): Promise<Dealer> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/admin/dealers/${dealerId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Dealer update failed');
+    if (USE_FIREBASE && db) {
+        await updateDoc(doc(db, 'dealers', dealerId), data);
+        const snap = await getDoc(doc(db, 'dealers', dealerId));
+        return { ...snap.data(), id: dealerId } as Dealer;
+    } else {
+        await delay();
+        const dealers = getLocal<Dealer>(STORAGE_KEYS.DEALERS);
+        const idx = dealers.findIndex(d => d.id === dealerId);
+        if (idx === -1) throw new Error('Dealer not found');
+        dealers[idx] = { ...dealers[idx], ...data };
+        setLocal(STORAGE_KEYS.DEALERS, dealers);
+        return dealers[idx];
     }
-    return await res.json();
   },
 
-  deleteDealer: async(dealerId: UUID): Promise<void> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/admin/dealers/${dealerId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Dealer deletion failed');
-    }
+  deleteDealer: async (dealerId: UUID): Promise<void> => {
+      if (USE_FIREBASE && db) {
+          await deleteDoc(doc(db, 'dealers', dealerId));
+      } else {
+          await delay();
+          const dealers = getLocal<Dealer>(STORAGE_KEYS.DEALERS).filter(d => d.id !== dealerId);
+          setLocal(STORAGE_KEYS.DEALERS, dealers);
+          
+          const employees = getLocal<Employee>(STORAGE_KEYS.EMPLOYEES).filter(e => e.dealer_id !== dealerId);
+          setLocal(STORAGE_KEYS.EMPLOYEES, employees);
+      }
   },
 
   resetDealerPassword: async (userId: UUID): Promise<string> => {
-    await simulateDelay(500);
-    const user = users.find(u => u.id === userId);
-    if (!user) throw new Error("User not found");
-    
-    const tempPass = generateTempPassword();
-    user.password = tempPass;
-    user.tempPass = true;
-
-    addAuditLog({ action_type: AuditActionType.RESET_PASSWORD, details: `Reset password for user: ${user.name}`});
-    return tempPass;
+    const newPass = Math.random().toString(36).slice(-8);
+    if (USE_FIREBASE) {
+        return "ResetViaConsole";
+    } else {
+        await delay();
+        const users = getLocal<User & { password: string }>(STORAGE_KEYS.USERS);
+        const idx = users.findIndex(u => u.id === userId);
+        if (idx !== -1) {
+            users[idx].password = newPass;
+            users[idx].tempPass = true;
+            setLocal(STORAGE_KEYS.USERS, users);
+        }
+        return newPass;
+    }
   },
 
-  resetDealerPasswordByEmail: async(email: string): Promise<void> => {
-     await simulateDelay(500);
-     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-     if (user) {
-        // We don't actually send an email, but we log it.
-        addAuditLog({ action_type: AuditActionType.RESET_PASSWORD, details: `Password reset requested for user: ${user.name}` });
-     }
-     // Don't throw an error for privacy reasons.
+  resetDealerPasswordByEmail: async (email: string): Promise<void> => {
+     await delay();
+     // Logic to send email would go here
   },
   
   // === DEALER ===
-  getEmployees: async(): Promise<Employee[]> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/dealer/employees', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Failed to fetch employees');
+  getEmployees: async (): Promise<Employee[]> => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!currentUser.dealerId) return [];
+
+    if (USE_FIREBASE && db) {
+        const q = query(collection(db, 'employees'), where('dealer_id', '==', currentUser.dealerId));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({...d.data(), id: d.id} as Employee));
+    } else {
+        await delay();
+        return getLocal<Employee>(STORAGE_KEYS.EMPLOYEES).filter(e => e.dealer_id === currentUser.dealerId);
     }
-    return await res.json();
   },
   
-  createEmployee: async(employeeData: Omit<Employee, 'id' | 'dealer_id' | 'status'>): Promise<Employee> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/dealer/employees', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(employeeData)
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Employee creation failed');
+  createEmployee: async (employeeData: Omit<Employee, 'id' | 'dealer_id' | 'status'>): Promise<Employee> => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!currentUser.dealerId) throw new Error("No dealer session");
+
+    const newEmployee: Employee = {
+        id: crypto.randomUUID(),
+        dealer_id: currentUser.dealerId,
+        status: 'active',
+        ...employeeData
+    };
+
+    if (USE_FIREBASE && db) {
+        await setDoc(doc(db, 'employees', newEmployee.id), newEmployee);
+        return newEmployee;
+    } else {
+        await delay();
+        const list = getLocal<Employee>(STORAGE_KEYS.EMPLOYEES);
+        setLocal(STORAGE_KEYS.EMPLOYEES, [newEmployee, ...list]);
+        
+        // Audit Log
+        const logs = getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+        logs.unshift({
+            id: Date.now(),
+            who_user_id: currentUser.id,
+            who_user_name: currentUser.name,
+            dealer_id: currentUser.dealerId,
+            action_type: AuditActionType.CREATE_EMPLOYEE,
+            details: `Created employee: ${newEmployee.first_name} ${newEmployee.last_name}`,
+            timestamp: new Date().toISOString()
+        });
+        setLocal(STORAGE_KEYS.LOGS, logs);
+
+        return newEmployee;
     }
-    return await res.json();
   },
 
-  updateEmployee: async(employeeId: UUID, data: Partial<Employee>): Promise<Employee> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/dealer/employees/${employeeId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Employee update failed');
+  updateEmployee: async (employeeId: UUID, data: Partial<Employee>): Promise<Employee> => {
+    if (USE_FIREBASE && db) {
+        await updateDoc(doc(db, 'employees', employeeId), data);
+        const snap = await getDoc(doc(db, 'employees', employeeId));
+        return { ...snap.data(), id: employeeId } as Employee;
+    } else {
+        await delay();
+        const list = getLocal<Employee>(STORAGE_KEYS.EMPLOYEES);
+        const idx = list.findIndex(e => e.id === employeeId);
+        if (idx === -1) throw new Error("Employee not found");
+        list[idx] = { ...list[idx], ...data };
+        setLocal(STORAGE_KEYS.EMPLOYEES, list);
+        return list[idx];
     }
-    return await res.json();
   },
   
   terminateEmployee: async (employeeId: UUID, reason: string, date: string): Promise<Employee> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/dealer/employees/${employeeId}/terminate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ reason, date })
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Employee termination failed');
+    if (USE_FIREBASE && db) {
+        const updateData = {
+            status: 'terminated',
+            termination_reason: reason,
+            termination_date: date
+        };
+        await updateDoc(doc(db, 'employees', employeeId), updateData);
+        const snap = await getDoc(doc(db, 'employees', employeeId));
+        return { ...snap.data(), id: employeeId } as Employee;
+    } else {
+        await delay();
+        const list = getLocal<Employee>(STORAGE_KEYS.EMPLOYEES);
+        const idx = list.findIndex(e => e.id === employeeId);
+        if (idx === -1) throw new Error("Employee not found");
+        
+        list[idx].status = 'terminated';
+        list[idx].termination_reason = reason;
+        list[idx].termination_date = date;
+        setLocal(STORAGE_KEYS.EMPLOYEES, list);
+        
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const logs = getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+        logs.unshift({
+            id: Date.now(),
+            who_user_id: currentUser.id,
+            who_user_name: currentUser.name,
+            dealer_id: currentUser.dealerId,
+            action_type: AuditActionType.TERMINATE_EMPLOYEE,
+            details: `Terminated employee: ${list[idx].first_name} ${list[idx].last_name}`,
+            timestamp: new Date().toISOString()
+        });
+        setLocal(STORAGE_KEYS.LOGS, logs);
+        
+        return list[idx];
     }
-    return await res.json();
   },
 
-  getCustomers: async(): Promise<Customer[]> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/dealer/customers', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Failed to fetch customers');
+  getCustomers: async (): Promise<Customer[]> => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!currentUser.dealerId) return [];
+
+    if (USE_FIREBASE && db) {
+        const q = query(collection(db, 'customers'), where('dealer_id', '==', currentUser.dealerId));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({...d.data(), id: d.id} as Customer));
+    } else {
+        await delay();
+        return getLocal<Customer>(STORAGE_KEYS.CUSTOMERS).filter(c => c.dealer_id === currentUser.dealerId);
     }
-    return await res.json();
   },
   
-  createCustomer: async(customerData: Omit<Customer, 'id' | 'dealer_id' | 'status'>): Promise<Customer> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/dealer/customers', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(customerData)
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Customer creation failed');
+  createCustomer: async (customerData: Omit<Customer, 'id' | 'dealer_id' | 'status'>): Promise<Customer> => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!currentUser.dealerId) throw new Error("No dealer session");
+
+    const newCustomer: Customer = {
+        id: crypto.randomUUID(),
+        dealer_id: currentUser.dealerId,
+        status: 'active',
+        ...customerData
+    };
+
+    if (USE_FIREBASE && db) {
+        await setDoc(doc(db, 'customers', newCustomer.id), newCustomer);
+        return newCustomer;
+    } else {
+        await delay();
+        const list = getLocal<Customer>(STORAGE_KEYS.CUSTOMERS);
+        setLocal(STORAGE_KEYS.CUSTOMERS, [newCustomer, ...list]);
+        return newCustomer;
     }
-    return await res.json();
   },
   
-  updateCustomer: async(customerId: UUID, data: Partial<Customer>): Promise<Customer> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`/api/dealer/customers/${customerId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Customer update failed');
+  updateCustomer: async (customerId: UUID, data: Partial<Customer>): Promise<Customer> => {
+    if (USE_FIREBASE && db) {
+        await updateDoc(doc(db, 'customers', customerId), data);
+        const snap = await getDoc(doc(db, 'customers', customerId));
+        return { ...snap.data(), id: customerId } as Customer;
+    } else {
+        await delay();
+        const list = getLocal<Customer>(STORAGE_KEYS.CUSTOMERS);
+        const idx = list.findIndex(c => c.id === customerId);
+        if (idx === -1) throw new Error("Customer not found");
+        list[idx] = { ...list[idx], ...data };
+        setLocal(STORAGE_KEYS.CUSTOMERS, list);
+        return list[idx];
     }
-    return await res.json();
   },
   
-  getDealerAuditLogs: async(): Promise<AuditLog[]> => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('/api/dealer/audit-logs', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || 'Failed to fetch dealer audit logs');
+  getDealerAuditLogs: async (): Promise<AuditLog[]> => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    if (!currentUser.dealerId) return [];
+
+    if (USE_FIREBASE && db) {
+        const q = query(collection(db, 'audit_logs'), where('dealer_id', '==', currentUser.dealerId));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data() as AuditLog);
+    } else {
+        await delay();
+        return getLocal<AuditLog>(STORAGE_KEYS.LOGS).filter(l => l.dealer_id === currentUser.dealerId);
     }
-    return await res.json();
   },
 
   // === UNIVERSAL ===
   universalSearch: async (searchQuery: string): Promise<GlobalSearchResult[]> => {
-    await simulateDelay(700);
-    const query = searchQuery.toLowerCase().trim();
-    if (!query) return [];
+    const qStr = searchQuery.trim().toLowerCase();
+    if (!qStr) return [];
 
-    const employeeResults: GlobalSearchResult[] = employees
-      .filter(e => 
-        e.first_name.toLowerCase().includes(query) ||
-        e.last_name.toLowerCase().includes(query) ||
-        e.phone.includes(query) ||
-        e.aadhar.includes(query)
-      )
-      .map(e => {
-        const dealer = dealers.find(d => d.id === e.dealer_id);
-        return {
-          entityType: 'employee',
-          entityRefId: e.id,
-          canonicalName: `${e.first_name} ${e.last_name}`,
-          phoneNorm: e.phone,
-          identityNorm: e.aadhar,
-          ownerDealerId: e.dealer_id,
-          ownerDealerName: dealer?.company_name || 'Unknown',
-          statusSummary: e.status,
-          hireDate: e.hire_date,
-          terminationDate: e.termination_date,
-          terminationReason: e.termination_reason,
-        };
-      });
-      
-    addAuditLog({ action_type: AuditActionType.SEARCH, details: `Searched for: "${searchQuery}"` });
-    return employeeResults;
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    
+    let allEmployees: Employee[] = [];
+    let allDealers: Dealer[] = [];
+
+    if (USE_FIREBASE && db) {
+        // Basic implementation. For scalability, use Algolia or ElasticSearch.
+        const eSnap = await getDocs(collection(db, 'employees'));
+        allEmployees = eSnap.docs.map(d => ({...d.data(), id: d.id} as Employee));
+        const dSnap = await getDocs(collection(db, 'dealers'));
+        allDealers = dSnap.docs.map(d => ({...d.data(), id: d.id} as Dealer));
+    } else {
+        await delay();
+        allEmployees = getLocal<Employee>(STORAGE_KEYS.EMPLOYEES);
+        allDealers = getLocal<Dealer>(STORAGE_KEYS.DEALERS);
+    }
+
+    const results: GlobalSearchResult[] = [];
+
+    allEmployees.forEach(emp => {
+        if (
+            emp.first_name.toLowerCase().includes(qStr) || 
+            emp.last_name.toLowerCase().includes(qStr) ||
+            emp.phone.includes(qStr) ||
+            emp.aadhar.includes(qStr)
+        ) {
+            const dealer = allDealers.find(d => d.id === emp.dealer_id);
+            results.push({
+                entityType: 'employee',
+                entityRefId: emp.id,
+                canonicalName: `${emp.first_name} ${emp.last_name}`,
+                phoneNorm: emp.phone,
+                identityNorm: emp.aadhar,
+                ownerDealerId: emp.dealer_id,
+                ownerDealerName: dealer ? dealer.company_name : 'Unknown Dealer',
+                statusSummary: emp.status === 'terminated' ? 'terminated' : 'active',
+                hireDate: emp.hire_date,
+                terminationDate: emp.termination_date,
+                terminationReason: emp.termination_reason
+            });
+        }
+    });
+
+    if (!USE_FIREBASE && currentUser.id) { 
+        const logs = getLocal<AuditLog>(STORAGE_KEYS.LOGS);
+        logs.unshift({
+            id: Date.now(),
+            who_user_id: currentUser.id,
+            who_user_name: currentUser.name,
+            dealer_id: currentUser.dealerId,
+            action_type: AuditActionType.SEARCH,
+            details: `Searched for: ${qStr}`,
+            timestamp: new Date().toISOString()
+        });
+        setLocal(STORAGE_KEYS.LOGS, logs);
+    }
+
+    return results;
   },
 
   checkEmployeeByAadhar: async (aadhar: string): Promise<GlobalSearchResult | null> => {
-    await simulateDelay(300);
     if (aadhar.length < 12) return null;
 
-    const employee = employees.find(e => e.aadhar === aadhar && e.status === 'active');
-    if (!employee) return null;
+    let allEmployees: Employee[] = [];
+    let allDealers: Dealer[] = [];
 
-    const dealer = dealers.find(d => d.id === employee.dealer_id);
+    if (USE_FIREBASE && db) {
+        const q = query(collection(db, 'employees'), where('aadhar', '==', aadhar));
+        const snap = await getDocs(q);
+        allEmployees = snap.docs.map(d => ({...d.data(), id: d.id} as Employee));
+        
+        if (allEmployees.length > 0) {
+            const dSnap = await getDocs(collection(db, 'dealers'));
+            allDealers = dSnap.docs.map(d => ({...d.data(), id: d.id} as Dealer));
+        }
+    } else {
+        await delay();
+        allEmployees = getLocal<Employee>(STORAGE_KEYS.EMPLOYEES);
+        allDealers = getLocal<Dealer>(STORAGE_KEYS.DEALERS);
+    }
+
+    const match = allEmployees.find(e => e.status === 'active' && e.aadhar === aadhar);
+    if (!match) return null;
+
+    const dealer = allDealers.find(d => d.id === match.dealer_id);
+    
     return {
         entityType: 'employee',
-        entityRefId: employee.id,
-        canonicalName: `${employee.first_name} ${employee.last_name}`,
-        phoneNorm: employee.phone,
-        identityNorm: employee.aadhar,
-        ownerDealerId: employee.dealer_id,
-        ownerDealerName: dealer?.company_name || 'Unknown',
-        statusSummary: employee.status,
-        hireDate: employee.hire_date
+        entityRefId: match.id,
+        canonicalName: `${match.first_name} ${match.last_name}`,
+        phoneNorm: match.phone,
+        identityNorm: match.aadhar,
+        ownerDealerId: match.dealer_id,
+        ownerDealerName: dealer ? dealer.company_name : 'Unknown Dealer',
+        statusSummary: 'active',
+        hireDate: match.hire_date
     };
   },
 };
